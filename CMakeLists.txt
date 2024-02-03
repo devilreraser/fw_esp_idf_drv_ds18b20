@@ -1,5 +1,5 @@
 set(COMPONENT_ADD_INCLUDEDIRS include)
-set(COMPONENT_SRCS "ds18b20.c")
+set(COMPONENT_SRCS "drv_ds18b20.c" "ds18b20.c")
 set(COMPONENT_REQUIRES "driver" "esp_timer")
-set(COMPONENT_PRIV_REQUIRES "esp32-owb")
+set(COMPONENT_PRIV_REQUIRES "drv_owb")
 register_component()
