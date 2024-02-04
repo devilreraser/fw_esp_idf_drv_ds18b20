@@ -22,10 +22,32 @@ menu "Component drv_ds18b20 Configuration"
         default 48 if IDF_TARGET_ESP32S3
         depends on DRV_DS18B20_USE
 
+    config DRV_DS18B20_ONE_WIRE_GPIO_0
+        int "OneWire channel 0 GPIO number"
+        range DRV_DS18B20_GPIO_RANGE_NONE DRV_DS18B20_GPIO_OUT_RANGE_MAX
+        default -1
+        help
+            GPIO number (IOxx) to access One Wire Bus.
 
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used.
 
-    config DRV_DS18B20_ONE_WIRE_GPIO
-        int "OneWire GPIO number"
+            GPIOs 34-39 are input-only so cannot be used to drive the One Wire Bus.
+        depends on DRV_DS18B20_USE
+
+    config DRV_DS18B20_ONE_WIRE_GPIO_1
+        int "OneWire channel 1 GPIO number"
+        range DRV_DS18B20_GPIO_RANGE_NONE DRV_DS18B20_GPIO_OUT_RANGE_MAX
+        default -1
+        help
+            GPIO number (IOxx) to access One Wire Bus.
+
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used.
+
+            GPIOs 34-39 are input-only so cannot be used to drive the One Wire Bus.
+        depends on DRV_DS18B20_USE
+
+    config DRV_DS18B20_ONE_WIRE_GPIO_2
+        int "OneWire channel 2 GPIO number"
         range DRV_DS18B20_GPIO_RANGE_NONE DRV_DS18B20_GPIO_OUT_RANGE_MAX
         default -1
         help
