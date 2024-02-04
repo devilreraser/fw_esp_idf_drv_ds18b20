@@ -22,6 +22,7 @@
  * SOFTWARE.
  */
 
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -38,14 +39,40 @@
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
 #define SAMPLE_PERIOD        (1000)   // milliseconds
 
+static int ds18b20_devices_count = 0;
+static float ds18b20_temperature[MAX_DEVICES] = {NAN};
+static int ds18b20_errors[MAX_DEVICES] = {0};
+
+int drv_ds18b20_devices_count_get(void)
+{
+    return ds18b20_devices_count;
+}
+
+float drv_ds18b20_temperature_get(int index)
+{
+    if (index < ds18b20_devices_count)
+    {
+        return ds18b20_temperature[index];
+    }
+    return NAN;
+}
+
+int drv_ds18b20_errors_get(int index)
+{
+    if (index < ds18b20_devices_count)
+    {
+        return ds18b20_errors[index];
+    }
+    return -1;
+}
 
 
-
-void drv_ds18b20_task(void)
+void drv_ds18b20_task(void* arg)
 {
     // set log level
     esp_log_level_set(TAG, ESP_LOG_INFO);
     esp_log_level_set("owb", ESP_LOG_INFO);
+    esp_log_level_set("owb_rmt", ESP_LOG_INFO);
     esp_log_level_set("ds18b20", ESP_LOG_INFO);
 
     // To debug, use 'make menuconfig' to set default Log level to DEBUG, then uncomment:
@@ -62,7 +89,7 @@ void drv_ds18b20_task(void)
     owb_use_crc(owb, true);  // enable CRC check for ROM code
 
     // Find all connected devices
-    printf("Find devices:\n");
+    ESP_LOGI(TAG, "Find devices:");
     OneWireBus_ROMCode device_rom_codes[MAX_DEVICES] = {0};
     int num_devices = 0;
     OneWireBus_SearchState search_state = {0};
@@ -72,12 +99,20 @@ void drv_ds18b20_task(void)
     {
         char rom_code_s[17];
         owb_string_from_rom_code(search_state.rom_code, rom_code_s, sizeof(rom_code_s));
-        printf("  %d : %s\n", num_devices, rom_code_s);
+        ESP_LOGI(TAG, "  %d : %s", num_devices, rom_code_s);
         device_rom_codes[num_devices] = search_state.rom_code;
         ++num_devices;
         owb_search_next(owb, &search_state, &found);
     }
-    printf("Found %d device%s\n", num_devices, num_devices == 1 ? "" : "s");
+    ESP_LOGI(TAG, "Found %d device%s", num_devices, num_devices == 1 ? "" : "s");
+
+    ds18b20_devices_count = num_devices;
+    for (int index = 0; index < ds18b20_devices_count; index++)
+    {
+        ds18b20_temperature[index] = NAN;
+        ds18b20_errors[index] = 0;
+
+    }
 
     // In this example, if a single device is present, then the ROM code is probably
     // not very interesting, so just print it out. If there are multiple devices,
@@ -92,11 +127,11 @@ void drv_ds18b20_task(void)
         {
             char rom_code_s[OWB_ROM_CODE_STRING_LENGTH];
             owb_string_from_rom_code(rom_code, rom_code_s, sizeof(rom_code_s));
-            printf("Single device %s present\n", rom_code_s);
+            ESP_LOGI(TAG, "Single device %s present", rom_code_s);
         }
         else
         {
-            printf("An error occurred reading ROM code: %d", status);
+            ESP_LOGI(TAG, "An error occurred reading ROM code: %d", status);
         }
     }
     else
@@ -115,11 +150,11 @@ void drv_ds18b20_task(void)
         owb_status search_status = owb_verify_rom(owb, known_device, &is_present);
         if (search_status == OWB_STATUS_OK)
         {
-            printf("Device %s is %s\n", rom_code_s, is_present ? "present" : "not present");
+            ESP_LOGI(TAG, "Device %s is %s", rom_code_s, is_present ? "present" : "not present");
         }
         else
         {
-            printf("An error occurred searching for known device: %d", search_status);
+            ESP_LOGI(TAG, "An error occurred searching for known device: %d", search_status);
         }
     }
 
@@ -132,7 +167,7 @@ void drv_ds18b20_task(void)
 
         if (num_devices == 1)
         {
-            printf("Single device optimisations enabled\n");
+            ESP_LOGI(TAG, "Single device optimisations enabled");
             ds18b20_init_solo(ds18b20_info, owb);          // only one device on bus
         }
         else
@@ -146,11 +181,11 @@ void drv_ds18b20_task(void)
 //    // Read temperatures from all sensors sequentially
 //    while (1)
 //    {
-//        printf("\nTemperature readings (degrees C):\n");
+//        ESP_LOGI(TAG, "Temperature readings (degrees C):");
 //        for (int i = 0; i < num_devices; ++i)
 //        {
 //            float temp = ds18b20_get_temp(devices[i]);
-//            printf("  %d: %.3f\n", i, temp);
+//            ESP_LOGI(TAG, "  %d: %.3f", i, temp);
 //        }
 //        vTaskDelay(1000 / portTICK_PERIOD_MS);
 //    }
@@ -159,7 +194,7 @@ void drv_ds18b20_task(void)
     bool parasitic_power = false;
     ds18b20_check_for_parasite_power(owb, &parasitic_power);
     if (parasitic_power) {
-        printf("Parasitic-powered devices detected");
+        ESP_LOGI(TAG, "Parasitic-powered devices detected");
     }
 
     // In parasitic-power mode, devices cannot indicate when conversions are complete,
@@ -195,10 +230,12 @@ void drv_ds18b20_task(void)
             for (int i = 0; i < num_devices; ++i)
             {
                 errors[i] = ds18b20_read_temp(devices[i], &readings[i]);
+                ds18b20_temperature[i] = readings[i];
+                ds18b20_errors[i] = errors[i];
             }
 
             // Print results in a separate loop, after all have been read
-            printf("\nTemperature readings (degrees C): sample %d\n", ++sample_count);
+            ESP_LOGD(TAG, "Temperature readings (degrees C): sample %d", ++sample_count);
             for (int i = 0; i < num_devices; ++i)
             {
                 if (errors[i] != DS18B20_OK)
@@ -206,7 +243,7 @@ void drv_ds18b20_task(void)
                     ++errors_count[i];
                 }
 
-                printf("  %d: %.1f    %d errors\n", i, readings[i], errors_count[i]);
+                ESP_LOGD(TAG, "  %d: %.1f    %d errors", i, readings[i], errors_count[i]);
             }
 
             vTaskDelayUntil(&last_wake_time, SAMPLE_PERIOD / portTICK_PERIOD_MS);
@@ -214,7 +251,7 @@ void drv_ds18b20_task(void)
     }
     else
     {
-        printf("\nNo DS18B20 devices detected!\n");
+        ESP_LOGI(TAG, "No DS18B20 devices detected!");
     }
 
     // clean up dynamically allocated data
@@ -224,10 +261,11 @@ void drv_ds18b20_task(void)
     }
     owb_uninitialize(owb);
 
-    // printf("Restarting now.\n");
+    ESP_LOGW(TAG, "Exiting DS18B20 Task.");
     // fflush(stdout);
     // vTaskDelay(1000 / portTICK_PERIOD_MS);
     // esp_restart();
+    vTaskDelete(NULL);
 }
 
 

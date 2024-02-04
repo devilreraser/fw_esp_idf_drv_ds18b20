@@ -48,6 +48,9 @@ extern "C"
 /* *****************************************************************************
  * Function Prototypes
  **************************************************************************** */
+int drv_ds18b20_devices_count_get(void);
+float drv_ds18b20_temperature_get(int index);
+int drv_ds18b20_errors_get(int index);
 void drv_ds18b20_init(void);
 
 
