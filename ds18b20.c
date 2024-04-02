@@ -84,7 +84,7 @@ static void _init(DS18B20_Info * ds18b20_info, const OneWireBus * bus)
     }
     else
     {
-        ESP_LOGE(TAG, "ds18b20_info is NULL");
+        ESP_LOGE(TAG, "ds18b20_info is NULL in _init");
     }
 }
 
@@ -105,7 +105,7 @@ static bool _is_init(const DS18B20_Info * ds18b20_info)
     }
     else
     {
-        ESP_LOGE(TAG, "ds18b20_info is NULL");
+        ESP_LOGD(TAG, "ds18b20_info is NULL in _is_init");
     }
     return ok;
 }
@@ -372,7 +372,7 @@ void ds18b20_init(DS18B20_Info * ds18b20_info, const OneWireBus * bus, OneWireBu
     }
     else
     {
-        ESP_LOGE(TAG, "ds18b20_info is NULL");
+        ESP_LOGE(TAG, "ds18b20_info is NULL in ds18b20_init");
     }
 }
 
@@ -389,7 +389,7 @@ void ds18b20_init_solo(DS18B20_Info * ds18b20_info, const OneWireBus * bus)
     }
     else
     {
-        ESP_LOGE(TAG, "ds18b20_info is NULL");
+        ESP_LOGE(TAG, "ds18b20_info is NULL in ds18b20_init_solo");
     }
 }
 
