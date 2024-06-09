@@ -147,6 +147,11 @@ void drv_ds18b20_task(void* arg)
         // not very interesting, so just print it out. If there are multiple devices,
         // then it may be useful to check that a specific device is present.
 
+        if (num_devices[index] == 0)
+        {
+            owb_uninitialize(owb[index]);
+        }
+        else
         if (num_devices[index] == 1)
         {
             // For a single device only:
@@ -259,14 +264,22 @@ void drv_ds18b20_task(void* arg)
         {
             for (int index = 0; index < ONE_WIRE_BUS_CHANNELS; index++)
             {
-                ds18b20_convert_all(owb[index]);
+                if (num_devices[index])
+                {
+                    ds18b20_convert_all(owb[index]);
+                }
+                
             }
 
             // In this application all devices use the same resolution,
             // so use the first device to determine the delay
             for (int index = 0; index < ONE_WIRE_BUS_CHANNELS; index++)
             {
-                ds18b20_wait_for_conversion(devices[index][0]);
+                if (num_devices[index])
+                {
+                    ds18b20_wait_for_conversion(devices[index][0]);
+                }
+                
             }
             
 
@@ -304,12 +317,15 @@ void drv_ds18b20_task(void* arg)
 
     for (int index = 0; index < ONE_WIRE_BUS_CHANNELS; index++)
     {
-        // clean up dynamically allocated data
-        for (int i = 0; i < num_devices[index]; ++i)
+        if (num_devices[index])
         {
-            ds18b20_free(&devices[index][i]);
+            // clean up dynamically allocated data
+            for (int i = 0; i < num_devices[index]; ++i)
+            {
+                ds18b20_free(&devices[index][i]);
+            }
+            owb_uninitialize(owb[index]);
         }
-        owb_uninitialize(owb[index]);
     }
 
     ESP_LOGW(TAG, "Exiting DS18B20 Task.");
