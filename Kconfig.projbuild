@@ -9,6 +9,11 @@ menu "Component drv_ds18b20 Configuration"
         default 0
         depends on DRV_DS18B20_USE
 
+    config DRV_DS18B20_WAIT_INIT_MS
+        int "Time Wait Blocking Initialization Complete"
+        default 0
+        depends on DRV_DS18B20_USE
+
     config DRV_DS18B20_GPIO_RANGE_NONE
         int "GPIO Not Used"
         default -1

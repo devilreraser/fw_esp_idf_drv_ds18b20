@@ -25,6 +25,7 @@
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_system.h"
 #include "esp_log.h"
 
@@ -69,10 +70,21 @@ static int owb_gpio_num[ONE_WIRE_BUS_CHANNELS] =
 static int ds18b20_devices_count = 0;
 static float ds18b20_temperature[MAX_DEVICES] = {NAN};
 static int ds18b20_errors[MAX_DEVICES] = {0};
+int num_devices[ONE_WIRE_BUS_CHANNELS] = {0};
+SemaphoreHandle_t init_completed = NULL;
 
 int drv_ds18b20_devices_count_get(void)
 {
     return ds18b20_devices_count;
+}
+
+int drv_ds18b20_devices_count_on_bus_get(int index)
+{
+    if (index < ds18b20_devices_count)
+    {
+        return num_devices[index];
+    }
+    return 0;
 }
 
 float drv_ds18b20_temperature_get(int index)
@@ -95,6 +107,7 @@ int drv_ds18b20_errors_get(int index)
 
 void drv_ds18b20_task(void* arg)
 {
+    
     // set log level
     esp_log_level_set(TAG, ESP_LOG_INFO);
     esp_log_level_set("owb", ESP_LOG_INFO);
@@ -111,8 +124,8 @@ void drv_ds18b20_task(void* arg)
     // Create a 1-Wire bus, using the RMT timeslot driver
     OneWireBus * owb[ONE_WIRE_BUS_CHANNELS];
     owb_rmt_driver_info rmt_driver_info[ONE_WIRE_BUS_CHANNELS];
-    int num_devices[ONE_WIRE_BUS_CHANNELS] = {0};
     int num_devices_total = 0;
+
 
     DS18B20_Info * devices[ONE_WIRE_BUS_CHANNELS][MAX_DEVICES_PER_CHANNEL] = {0};
     DS18B20_Info * devices_total[MAX_DEVICES] = {0};
@@ -120,6 +133,7 @@ void drv_ds18b20_task(void* arg)
 
     for (int index = 0; index < ONE_WIRE_BUS_CHANNELS; index++)
     {
+        num_devices[index] = 0;
         owb[index] = owb_rmt_initialize(&rmt_driver_info[index], owb_gpio_num[index], RMT_CHANNEL_1 + index*2, RMT_CHANNEL_0 + index*2);
         owb_use_crc(owb[index], true);  // enable CRC check for ROM code
 
@@ -226,21 +240,25 @@ void drv_ds18b20_task(void* arg)
     //    }
 
         // Check for parasitic-powered devices
-        bool parasitic_power = false;
-        ds18b20_check_for_parasite_power(owb[index], &parasitic_power);
-        if (parasitic_power) {
-            ESP_LOGI(TAG, "Parasitic-powered devices detected");
+        if (num_devices[index] != 0)
+        {
+            bool parasitic_power = false;
+            ds18b20_check_for_parasite_power(owb[index], &parasitic_power);
+            if (parasitic_power) {
+                ESP_LOGI(TAG, "Parasitic-powered devices detected");
+            }
+
+            // In parasitic-power mode, devices cannot indicate when conversions are complete,
+            // so waiting for a temperature conversion must be done by waiting a prescribed duration
+            owb_use_parasitic_power(owb[index], parasitic_power);
+
+            #ifdef CONFIG_DRV_DS18B20_ENABLE_STRONG_PULLUP_GPIO
+            // An external pull-up circuit is used to supply extra current to OneWireBus devices
+            // during temperature conversions.
+            owb_use_strong_pullup_gpio(owb, CONFIG_DRV_DS18B20_STRONG_PULLUP_GPIO);
+            #endif
         }
 
-        // In parasitic-power mode, devices cannot indicate when conversions are complete,
-        // so waiting for a temperature conversion must be done by waiting a prescribed duration
-        owb_use_parasitic_power(owb[index], parasitic_power);
-
-    #ifdef CONFIG_DRV_DS18B20_ENABLE_STRONG_PULLUP_GPIO
-        // An external pull-up circuit is used to supply extra current to OneWireBus devices
-        // during temperature conversions.
-        owb_use_strong_pullup_gpio(owb, CONFIG_DRV_DS18B20_STRONG_PULLUP_GPIO);
-    #endif
 
     }
 
@@ -256,9 +274,15 @@ void drv_ds18b20_task(void* arg)
     // Read temperatures more efficiently by starting conversions on all devices at the same time
     int errors_count[MAX_DEVICES] = {0};
     int sample_count = 0;
+
+    xSemaphoreGive(init_completed);
+
+
     if (num_devices_total > 0)
     {
         TickType_t last_wake_time = xTaskGetTickCount();
+
+
 
         while (1)
         {
@@ -338,6 +362,22 @@ void drv_ds18b20_task(void* arg)
 
 void drv_ds18b20_init(void)
 {
+    init_completed = xSemaphoreCreateBinary();
     xTaskCreate(drv_ds18b20_task, "ds18b20", 2048+1024, NULL, 5,NULL);
+    /* wait initialization to complete */
+    vTaskDelay(pdMS_TO_TICKS(CONFIG_DRV_DS18B20_WAIT_INIT_MS));
+
+}
+
+void drv_ds18b20_wait_init(void)
+{
+    if (init_completed)
+    {
+        xSemaphoreTake(init_completed, portMAX_DELAY);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "drv_ds18b20_init not called yet");
+    }
 }
 
